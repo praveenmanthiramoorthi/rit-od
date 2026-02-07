@@ -3,10 +3,9 @@ import { Html5Qrcode } from 'html5-qrcode';
 
 interface QRScannerProps {
     onScanSuccess: (decodedText: string) => void;
-    onScanFailure?: (error: string) => void;
 }
 
-export const QRScanner = ({ onScanSuccess, onScanFailure }: QRScannerProps) => {
+export const QRScanner = ({ onScanSuccess }: QRScannerProps) => {
     const [error, setError] = useState<string | null>(null);
     const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
 
