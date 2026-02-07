@@ -17,49 +17,84 @@ interface StudentData {
     batch: string;
 }
 
-export const generateAttendancePDF = (userName: string, email: string, records: AttendanceRecord[]) => {
+export const generateEventReportPDF = (clubName: string, event: { title: string, date: string, venue: string }, attendance: any[]) => {
     const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
 
     // Header
     doc.setFontSize(22);
-    doc.text("On-Duty Attendance Certificate", 105, 20, { align: "center" });
+    doc.setTextColor(79, 70, 229); // Primary Color
+    doc.setFont("helvetica", "bold");
+    doc.text("Event Attendance Report", pageWidth / 2, 20, { align: "center" });
 
-    doc.setFontSize(12);
+    // Club & Event Info Box
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(15, 30, pageWidth - 30, 40, 3, 3, 'FD');
+
+    doc.setFontSize(10);
     doc.setTextColor(100);
-    doc.text(`Generated on: ${new Date().toLocaleDateString()}`, 105, 28, { align: "center" });
-
-    // Student Info
+    doc.text("ORGANIZED BY", 25, 40);
     doc.setFontSize(14);
     doc.setTextColor(0);
-    doc.text("Student Information", 20, 45);
+    doc.setFont("helvetica", "bold");
+    doc.text(clubName.toUpperCase(), 25, 48);
+
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text("EVENT TITLE", 25, 60);
+    doc.setFontSize(12);
+    doc.setTextColor(0);
+    doc.text(event.title, 25, 66);
+
+    // Event Date & Venue (Right Side)
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text("DATE", pageWidth - 100, 40);
+    doc.setTextColor(0);
     doc.setFontSize(11);
-    doc.text(`Name: ${userName}`, 20, 52);
-    doc.text(`Email: ${email}`, 20, 58);
+    doc.text(event.date, pageWidth - 100, 48);
+
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text("VENUE", pageWidth - 100, 60);
+    doc.setTextColor(0);
+    doc.setFontSize(11);
+    doc.text(event.venue, pageWidth - 100, 66);
+
+    // Summary
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text(`Total Attendees: ${attendance.length}`, 15, 85);
+    doc.text(`Report Generated: ${new Date().toLocaleString()}`, pageWidth - 15, 85, { align: "right" });
 
     // Table
-    const tableColumn = ["Event Title", "Date", "Venue", "Status"];
-    const tableRows = records.map(record => [
-        record.eventTitle,
-        record.eventDate,
-        record.eventVenue,
+    const tableColumn = ["S.No", "Register Number", "Student Email", "Time Scanned", "Status"];
+    const tableRows = attendance.map((record, index) => [
+        index + 1,
+        record.regNo,
+        record.studentEmail,
+        record.timestamp?.toDate ? record.timestamp.toDate().toLocaleTimeString() : "N/A",
         record.status
     ]);
 
     (doc as any).autoTable({
         head: [tableColumn],
         body: tableRows,
-        startY: 70,
-        styles: { fontSize: 10 },
-        headStyles: { fillStyle: 'DF', fillColor: [79, 70, 229] }, // Primary color
+        startY: 90,
+        margin: { horizontal: 15 },
+        styles: { fontSize: 9, cellPadding: 3 },
+        headStyles: { fillColor: [79, 70, 229], fontStyle: 'bold' },
+        alternateRowStyles: { fillColor: [249, 250, 251] },
     });
 
     // Footer
-    const finalY = (doc as any).lastAutoTable.finalY || 70;
-    doc.setFontSize(10);
+    const finalY = (doc as any).lastAutoTable.finalY || 90;
+    doc.setFontSize(9);
     doc.setTextColor(150);
-    doc.text("This is a computer-generated document and requires no signature.", 105, finalY + 20, { align: "center" });
+    doc.text("This is an official attendance report generated from the RIT OD Hub.", pageWidth / 2, finalY + 20, { align: "center" });
 
-    doc.save(`Attendance_${userName.replace(/\s+/g, '_')}.pdf`);
+    doc.save(`Report_${event.title.replace(/\s+/g, '_')}.pdf`);
 };
 
 export const generateODCertificate = async (student: StudentData, record: AttendanceRecord, certificateId: string) => {

@@ -4,7 +4,7 @@ import { db } from "@/lib/firebase";
 import { collection, addDoc, query, where, Timestamp, onSnapshot, doc, setDoc, deleteDoc } from "firebase/firestore";
 import { Plus, Users, QrCode, ClipboardList, Download, X, Calendar, MapPin, CheckCircle2, Trash2 } from "lucide-react";
 import { QRScanner } from "@/components/QRScanner";
-import { generateAttendancePDF } from "@/lib/pdf";
+import { generateEventReportPDF } from "@/lib/pdf";
 
 interface Event {
     id: string;
@@ -119,15 +119,7 @@ export default function AdminDashboard() {
 
     const handleDownloadReport = () => {
         if (!selectedEvent) return;
-        const records = attendanceList.map(a => ({
-            eventTitle: selectedEvent.title,
-            date: selectedEvent.date,
-            venue: selectedEvent.venue,
-            status: a.status,
-            regNo: a.regNo
-        }));
-        // We'll pass the info to the generator
-        generateAttendancePDF(clubName, selectedEvent.title, records as any);
+        generateEventReportPDF(clubName, selectedEvent, attendanceList);
     };
 
     const handleDeleteEvent = async (eventId: string) => {
@@ -203,8 +195,8 @@ export default function AdminDashboard() {
                                             handleDeleteEvent(event.id);
                                         }}
                                         className={`absolute top-4 right-4 p-2 rounded-lg transition-colors ${selectedEvent?.id === event.id
-                                                ? "hover:bg-white/20 text-white/80 hover:text-white"
-                                                : "hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+                                            ? "hover:bg-white/20 text-white/80 hover:text-white"
+                                            : "hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
                                             }`}
                                         title="Delete Event"
                                     >
