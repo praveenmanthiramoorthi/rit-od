@@ -109,8 +109,6 @@ export default function AdminDashboard() {
             const studentAttendanceRef = doc(db, `students/${cleanRegNo}/attendance`, selectedEvent.id);
             await setDoc(studentAttendanceRef, attendanceData);
 
-            await setDoc(studentAttendanceRef, attendanceData);
-
             // Instead of closing, show a temporary success toast/alert
             const msg = `Success: ${cleanRegNo} Marked!`;
             console.log(msg);
