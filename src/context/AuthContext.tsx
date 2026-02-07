@@ -32,18 +32,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [error, setError] = useState<string | null>(null);
     const [profileComplete, setProfileComplete] = useState<boolean>(false);
 
-    const adminEmails = ["praveenmanthiramoorthi@gmail.com", "techspark@ritchennai.edu.in"];
-    const isAdmin = !!user && adminEmails.includes(user.email || "");
+    // Consolidate admin list and logic
+    const publicAdminEmails = ["praveenmanthiramoorthi@gmail.com", "techspark@ritchennai.edu.in"];
+    const envAdminEmail = import.meta.env.VITE_ADMIN_EMAIL;
+    const adminList = envAdminEmail ? [...publicAdminEmails, envAdminEmail] : publicAdminEmails;
+
+    // Derived isAdmin state with case-insensitive check
+    const isAdmin = !!user && adminList.some(email =>
+        email.toLowerCase() === user.email?.toLowerCase()
+    );
 
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-            const isAllowed = currentUser && (
-                currentUser.email?.endsWith("ritchennai.edu.in") ||
-                adminEmails.includes(currentUser.email || "")
+            const userEmail = currentUser?.email?.toLowerCase() || "";
+            const isAuthorized = currentUser && (
+                userEmail.endsWith("ritchennai.edu.in") ||
+                adminList.some(email => email.toLowerCase() === userEmail)
             );
 
-            if (currentUser && !isAllowed) {
-                signOut(auth);
+            console.log("Auth State Changed:", {
+                email: userEmail,
+                isAuthorized,
+                isAdmin: isAuthorized && adminList.some(email => email.toLowerCase() === userEmail)
+            });
+
+            if (currentUser && !isAuthorized) {
+                console.warn("Unauthorized login attempt:", userEmail);
+                await signOut(auth);
                 setUser(null);
                 setUserData(null);
                 setProfileComplete(false);
@@ -73,10 +88,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setError(null);
         try {
             const result = await signInWithPopup(auth, googleProvider);
-            const email = result.user.email || "";
-            const isAllowed = email.endsWith("ritchennai.edu.in") || adminEmails.includes(email);
+            const email = result.user.email?.toLowerCase() || "";
+            const isAuthorized = email.endsWith("ritchennai.edu.in") || adminList.some(admin => admin.toLowerCase() === email);
 
-            if (!isAllowed) {
+            if (!isAuthorized) {
                 await signOut(auth);
                 const errorMsg = "Access Denied: Restricted to college or authorized club emails.";
                 setError(errorMsg);
