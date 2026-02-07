@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
+import { Zap, ZapOff } from 'lucide-react';
 
 interface QRScannerProps {
     onScanSuccess: (decodedText: string) => void;
@@ -7,6 +8,8 @@ interface QRScannerProps {
 
 export const QRScanner = ({ onScanSuccess }: QRScannerProps) => {
     const [error, setError] = useState<string | null>(null);
+    const [isTorchOn, setIsTorchOn] = useState(false);
+    const [hasTorch, setHasTorch] = useState(false);
     const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
 
     useEffect(() => {
@@ -19,33 +22,55 @@ export const QRScanner = ({ onScanSuccess }: QRScannerProps) => {
             try {
                 const devices = await Html5Qrcode.getCameras();
                 if (devices && devices.length > 0) {
-                    // Start with the back camera (if available) or the first one
-                    // const camera = devices.find(d => d.label.toLowerCase().includes('back')) || devices[0];
-
                     await html5QrCode.start(
-                        { facingMode: "environment" }, // Try back camera directly
+                        { facingMode: "environment" },
                         {
                             fps: 10,
                             qrbox: { width: 250, height: 250 },
                         },
                         (decodedText) => {
-                            // On success
-                            onScanSuccess(decodedText);
+                            onScan(decodedText);
                         },
-                        () => { } // Ignore scan failures
+                        () => { }
                     );
+
+                    // Check for torch/flashlight capability
+                    try {
+                        // Access the video track through the private property or getRunningTrack if available
+                        // @ts-ignore
+                        const track = html5QrCode.getRunningTrack();
+                        if (track) {
+                            const capabilities = track.getCapabilities() as any;
+                            if (capabilities.torch) {
+                                setHasTorch(true);
+                            }
+                        }
+                    } catch (e) {
+                        console.warn("Torch check failed:", e);
+                    }
                 } else {
                     setError("No cameras found. Please ensure your device has a camera.");
                 }
             } catch (err: any) {
                 console.error("Scanner Error:", err);
-                if (!err.message?.includes("already scanning")) { // Check err.message for "already scanning"
+                if (!err.message?.includes("already scanning")) {
                     setError(`Permission Denied or Camera Busy. Please check your browser settings.`);
                 }
             }
         };
 
-        const timeoutId = setTimeout(startScanner, 500); // Small delay to avoid StrictMode double-fire issues
+        const onScan = (decodedText: string) => {
+            // Prevent duplicate scans within 2 seconds
+            const now = Date.now();
+            // @ts-ignore
+            if (html5QrCode._lastScan && now - html5QrCode._lastScan < 2000) return;
+            // @ts-ignore
+            html5QrCode._lastScan = now;
+
+            onScanSuccess(decodedText);
+        };
+
+        const timeoutId = setTimeout(startScanner, 500);
 
         return () => {
             isMoving = true;
@@ -56,15 +81,31 @@ export const QRScanner = ({ onScanSuccess }: QRScannerProps) => {
         };
     }, []);
 
+    const toggleTorch = async () => {
+        const scanner = html5QrCodeRef.current;
+        if (scanner && scanner.isScanning) {
+            try {
+                const nextTorchState = !isTorchOn;
+                await scanner.applyVideoConstraints({
+                    // @ts-ignore
+                    advanced: [{ torch: nextTorchState }]
+                });
+                setIsTorchOn(nextTorchState);
+            } catch (e) {
+                console.error("Torch toggle failed:", e);
+            }
+        }
+    };
+
     const handleRetry = () => {
         window.location.reload();
     };
 
     return (
-        <div className="w-full max-w-md mx-auto overflow-hidden rounded-2xl border-2 border-primary/20 bg-background shadow-2xl">
-            <div id="reader" className="w-full aspect-square bg-black flex items-center justify-center">
+        <div className="w-full max-w-md mx-auto overflow-hidden rounded-2xl border-2 border-primary/20 bg-background shadow-2xl relative">
+            <div id="reader" className="w-full aspect-square bg-black flex items-center justify-center relative">
                 {error && (
-                    <div className="p-6 text-center">
+                    <div className="p-6 text-center z-10">
                         <p className="text-destructive font-bold mb-2">Camera Error</p>
                         <p className="text-sm text-muted-foreground mb-6">{error}</p>
                         <button
@@ -76,18 +117,30 @@ export const QRScanner = ({ onScanSuccess }: QRScannerProps) => {
                     </div>
                 )}
                 {!error && !html5QrCodeRef.current?.isScanning && (
-                    <div className="text-center p-6">
+                    <div className="text-center p-6 z-10">
                         <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-                        <p className="font-medium">Initializing camera...</p>
-                        <p className="text-xs text-muted-foreground mt-2">Waiting for permissions...</p>
+                        <p className="font-medium text-white">Initializing camera...</p>
                     </div>
                 )}
+
+                {/* Torch Control Button */}
+                {hasTorch && (
+                    <button
+                        onClick={toggleTorch}
+                        className={`absolute bottom-4 right-4 z-20 p-4 rounded-full transition-all ${isTorchOn ? 'bg-yellow-400 text-black shadow-lg shadow-yellow-400/20' : 'bg-black/50 text-white backdrop-blur-md'
+                            }`}
+                        title={isTorchOn ? "Turn Flashlight Off" : "Turn Flashlight On"}
+                    >
+                        {isTorchOn ? <ZapOff className="w-6 h-6" /> : <Zap className="w-6 h-6" />}
+                    </button>
+                )}
             </div>
+
             <div className="p-6 text-center bg-background border-t border-border">
-                <p className="text-sm font-bold text-primary mb-1">QR SCANNER READY</p>
+                <p className="text-sm font-bold text-primary mb-1 tracking-widest uppercase">Scanner Active</p>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                    Make sure your camera lens is clean and <br />
-                    the QR code is well-lit.
+                    Once a registration number is detected, <br />
+                    the student's attendance will be marked instantly.
                 </p>
             </div>
         </div>

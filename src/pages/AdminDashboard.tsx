@@ -109,8 +109,14 @@ export default function AdminDashboard() {
             const studentAttendanceRef = doc(db, `students/${cleanRegNo}/attendance`, selectedEvent.id);
             await setDoc(studentAttendanceRef, attendanceData);
 
-            setShowScanner(false);
-            alert(`Attendance marked for ${cleanRegNo}`);
+            await setDoc(studentAttendanceRef, attendanceData);
+
+            // Instead of closing, show a temporary success toast/alert
+            const msg = `Success: ${cleanRegNo} Marked!`;
+            console.log(msg);
+            // We use alert for now but it stays open
+            alert(msg);
+            // The scanner remains open for the next person
         } catch (error) {
             console.error("Error marking attendance:", error);
             alert("Error marking attendance. Please try again.");
