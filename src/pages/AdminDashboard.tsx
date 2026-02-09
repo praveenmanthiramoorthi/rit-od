@@ -29,6 +29,7 @@ export default function AdminDashboard() {
     const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
     const [showScanner, setShowScanner] = useState(false);
     const [attendanceList, setAttendanceList] = useState<Attendance[]>([]);
+    const [scanStatus, setScanStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
 
     // Form State
     const [newTitle, setNewTitle] = useState("");
@@ -109,15 +110,17 @@ export default function AdminDashboard() {
             const studentAttendanceRef = doc(db, `students/${cleanRegNo}/attendance`, selectedEvent.id);
             await setDoc(studentAttendanceRef, attendanceData);
 
-            // Instead of closing, show a temporary success toast/alert
-            const msg = `Success: ${cleanRegNo} Marked!`;
-            console.log(msg);
-            // We use alert for now but it stays open
-            alert(msg);
-            // The scanner remains open for the next person
+            // Instead of blocking alert, show a success status
+            setScanStatus({ type: 'success', message: `Marked: ${cleanRegNo}` });
+
+            // Clear status after 3 seconds
+            setTimeout(() => setScanStatus(null), 3000);
+
+            console.log(`Success: ${cleanRegNo} Marked!`);
         } catch (error) {
             console.error("Error marking attendance:", error);
-            alert("Error marking attendance. Please try again.");
+            setScanStatus({ type: 'error', message: "Failed to mark attendance." });
+            setTimeout(() => setScanStatus(null), 3000);
         }
     };
 
@@ -346,7 +349,13 @@ export default function AdminDashboard() {
                                 <X className="w-6 h-6" />
                             </button>
                         </div>
-                        <div className="p-8">
+                        <div className="p-8 relative">
+                            {scanStatus && (
+                                <div className={`absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[110] px-6 py-3 rounded-full shadow-2xl animate-in fade-in slide-in-from-top-4 duration-300 font-bold border-2 ${scanStatus.type === 'success' ? 'bg-green-500 text-white border-green-400' : 'bg-destructive text-white border-destructive/50'
+                                    }`}>
+                                    {scanStatus.message}
+                                </div>
+                            )}
                             <QRScanner onScanSuccess={handleScanSuccess} />
                         </div>
                         <div className="px-8 pb-8 flex justify-center">

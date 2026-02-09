@@ -34,20 +34,26 @@ export const QRScanner = ({ onScanSuccess }: QRScannerProps) => {
                         () => { }
                     );
 
-                    // Check for torch/flashlight capability
-                    try {
-                        // Access the video track through the private property or getRunningTrack if available
-                        // @ts-ignore
-                        const track = html5QrCode.getRunningTrack();
-                        if (track) {
-                            const capabilities = track.getCapabilities() as any;
-                            if (capabilities.torch) {
-                                setHasTorch(true);
+                    // Check for torch/flashlight capability with retries
+                    let attempts = 0;
+                    const checkTorch = setInterval(() => {
+                        try {
+                            // @ts-ignore - Accessing underlying stream track
+                            const track = html5QrCode.getRunningTrack();
+                            if (track) {
+                                const capabilities = track.getCapabilities() as any;
+                                if (capabilities.torch) {
+                                    setHasTorch(true);
+                                    clearInterval(checkTorch);
+                                }
                             }
+                        } catch (e) {
+                            console.warn("Torch check attempt failed:", e);
                         }
-                    } catch (e) {
-                        console.warn("Torch check failed:", e);
-                    }
+
+                        attempts++;
+                        if (attempts > 10) clearInterval(checkTorch); // Stop after 5 seconds (10 * 500ms)
+                    }, 500);
                 } else {
                     setError("No cameras found. Please ensure your device has a camera.");
                 }
