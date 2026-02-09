@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
-import { Zap, ZapOff } from 'lucide-react';
+import { Zap, ZapOff, CameraOff, RefreshCw } from 'lucide-react';
 
 interface QRScannerProps {
     onScanSuccess: (decodedText: string) => void;
@@ -8,146 +8,162 @@ interface QRScannerProps {
 
 export const QRScanner = ({ onScanSuccess }: QRScannerProps) => {
     const [error, setError] = useState<string | null>(null);
+    const [isScanning, setIsScanning] = useState(false);
     const [isTorchOn, setIsTorchOn] = useState(false);
     const [hasTorch, setHasTorch] = useState(false);
+
+    // Create a unique ID for the reader to prevent collisions
+    const readerId = useRef(`qr-reader-${Math.random().toString(36).substr(2, 9)}`).current;
     const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
+    const onScanSuccessRef = useRef(onScanSuccess);
 
     useEffect(() => {
-        let isMoving = false;
-        const html5QrCode = new Html5Qrcode("reader");
-        html5QrCodeRef.current = html5QrCode;
+        onScanSuccessRef.current = onScanSuccess;
+    }, [onScanSuccess]);
 
-        const startScanner = async () => {
-            if (isMoving) return;
+    useEffect(() => {
+        let isUnmounted = false;
+        let scanner: Html5Qrcode | null = null;
+
+        const initScanner = async () => {
+            // Wait for DOM to be ready
+            await new Promise(resolve => setTimeout(resolve, 500));
+            if (isUnmounted) return;
+
             try {
-                const devices = await Html5Qrcode.getCameras();
-                if (devices && devices.length > 0) {
-                    await html5QrCode.start(
-                        { facingMode: "environment" },
-                        {
-                            fps: 10,
-                            qrbox: { width: 250, height: 250 },
-                        },
-                        (decodedText) => {
-                            onScan(decodedText);
-                        },
-                        () => { }
-                    );
+                const element = document.getElementById(readerId);
+                if (!element) {
+                    console.error("Reader element not found");
+                    return;
+                }
 
-                    // Check for torch/flashlight capability with retries
-                    let attempts = 0;
-                    const checkTorch = setInterval(() => {
+                scanner = new Html5Qrcode(readerId);
+                html5QrCodeRef.current = scanner;
+
+                const startConfig = {
+                    fps: 15,
+                    qrbox: { width: 250, height: 250 },
+                };
+
+                await scanner.start(
+                    { facingMode: "environment" },
+                    startConfig,
+                    (decodedText) => {
+                        const now = Date.now();
+                        // @ts-ignore
+                        if (scanner._lastScan && now - scanner._lastScan < 2000) return;
+                        // @ts-ignore
+                        scanner._lastScan = now;
+
+                        if ('vibrate' in navigator) navigator.vibrate(100);
+                        onScanSuccessRef.current(decodedText);
+                    },
+                    () => { /* scan error - ignore */ }
+                );
+
+                if (!isUnmounted) {
+                    setIsScanning(true);
+
+                    const trackCheckInterval = setInterval(() => {
+                        if (isUnmounted) return clearInterval(trackCheckInterval);
+
                         try {
-                            // @ts-ignore - Accessing underlying stream track
-                            const track = html5QrCode.getRunningTrack();
+                            // @ts-ignore
+                            const track = scanner.getRunningTrack();
                             if (track) {
-                                const capabilities = track.getCapabilities() as any;
-                                if (capabilities.torch) {
+                                const caps = track.getCapabilities() as any;
+                                if (caps?.torch) {
                                     setHasTorch(true);
-                                    clearInterval(checkTorch);
+                                    clearInterval(trackCheckInterval);
                                 }
                             }
-                        } catch (e) {
-                            console.warn("Torch check attempt failed:", e);
-                        }
+                        } catch (e) { }
+                    }, 800);
 
-                        attempts++;
-                        if (attempts > 10) clearInterval(checkTorch); // Stop after 5 seconds (10 * 500ms)
-                    }, 500);
-                } else {
-                    setError("No cameras found. Please ensure your device has a camera.");
+                    setTimeout(() => clearInterval(trackCheckInterval), 8000);
                 }
             } catch (err: any) {
                 console.error("Scanner Error:", err);
-                if (!err.message?.includes("already scanning")) {
-                    setError(`Permission Denied or Camera Busy. Please check your browser settings.`);
+                if (!isUnmounted) {
+                    if (err.toString().includes("Permission denied")) {
+                        setError("Camera permission denied.");
+                    } else {
+                        setError("Could not access camera.");
+                    }
                 }
             }
         };
 
-        const onScan = (decodedText: string) => {
-            // Prevent duplicate scans within 2 seconds
-            const now = Date.now();
-            // @ts-ignore
-            if (html5QrCode._lastScan && now - html5QrCode._lastScan < 2000) return;
-            // @ts-ignore
-            html5QrCode._lastScan = now;
-
-            onScanSuccess(decodedText);
-        };
-
-        const timeoutId = setTimeout(startScanner, 500);
+        initScanner();
 
         return () => {
-            isMoving = true;
-            clearTimeout(timeoutId);
-            if (html5QrCode.isScanning) {
-                html5QrCode.stop().catch(e => console.error("Stop error", e));
+            isUnmounted = true;
+            if (scanner && scanner.isScanning) {
+                scanner.stop().catch(e => console.error("Scanner stop fail", e));
             }
         };
-    }, []);
+    }, [readerId]);
 
     const toggleTorch = async () => {
         const scanner = html5QrCodeRef.current;
-        if (scanner && scanner.isScanning) {
+        if (scanner?.isScanning) {
             try {
-                const nextTorchState = !isTorchOn;
+                const newState = !isTorchOn;
                 await scanner.applyVideoConstraints({
                     // @ts-ignore
-                    advanced: [{ torch: nextTorchState }]
+                    advanced: [{ torch: newState }]
                 });
-                setIsTorchOn(nextTorchState);
+                setIsTorchOn(newState);
             } catch (e) {
-                console.error("Torch toggle failed:", e);
+                console.error("Torch fail", e);
             }
         }
     };
 
-    const handleRetry = () => {
-        window.location.reload();
-    };
-
     return (
-        <div className="w-full max-w-md mx-auto overflow-hidden rounded-2xl border-2 border-primary/20 bg-background shadow-2xl relative">
-            <div id="reader" className="w-full aspect-square bg-black flex items-center justify-center relative">
+        <div className="w-full max-w-md mx-auto relative group">
+            <div className="w-full aspect-square bg-slate-950 rounded-2xl border-2 border-primary/20 shadow-2xl overflow-hidden relative">
+                <div id={readerId} className="w-full h-full" />
+
+                {!isScanning && !error && (
+                    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-slate-900/90 backdrop-blur-sm">
+                        <RefreshCw className="w-10 h-10 text-primary animate-spin mb-4" />
+                        <p className="text-white font-bold tracking-widest text-xs uppercase">Initializing...</p>
+                    </div>
+                )}
+
                 {error && (
-                    <div className="p-6 text-center z-10">
-                        <p className="text-destructive font-bold mb-2">Camera Error</p>
-                        <p className="text-sm text-muted-foreground mb-6">{error}</p>
+                    <div className="absolute inset-0 z-20 flex flex-col items-center justify-center p-8 bg-slate-900/95 text-center">
+                        <CameraOff className="w-12 h-12 text-destructive mb-4" />
+                        <p className="text-white font-bold mb-2">Scanner Error</p>
+                        <p className="text-xs text-slate-400 mb-6">{error}</p>
                         <button
-                            onClick={handleRetry}
-                            className="px-6 py-2 bg-primary text-white rounded-lg font-medium shadow-lg shadow-primary/20"
+                            onClick={() => window.location.reload()}
+                            className="px-6 py-2 bg-primary text-white rounded-lg text-sm font-bold shadow-lg shadow-primary/20"
                         >
-                            Retry Camera
+                            Retry
                         </button>
                     </div>
                 )}
-                {!error && !html5QrCodeRef.current?.isScanning && (
-                    <div className="text-center p-6 z-10">
-                        <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-                        <p className="font-medium text-white">Initializing camera...</p>
-                    </div>
-                )}
 
-                {/* Torch Control Button */}
-                {hasTorch && (
+                {hasTorch && isScanning && (
                     <button
                         onClick={toggleTorch}
-                        className={`absolute bottom-4 right-4 z-20 p-4 rounded-full transition-all ${isTorchOn ? 'bg-yellow-400 text-black shadow-lg shadow-yellow-400/20' : 'bg-black/50 text-white backdrop-blur-md'
+                        className={`absolute top-6 right-6 z-30 p-4 rounded-2xl transition-all duration-300 ${isTorchOn
+                                ? 'bg-yellow-400 text-black shadow-lg shadow-yellow-400/30 rotate-12'
+                                : 'bg-black/40 text-white backdrop-blur-md hover:bg-black/60'
                             }`}
-                        title={isTorchOn ? "Turn Flashlight Off" : "Turn Flashlight On"}
                     >
                         {isTorchOn ? <ZapOff className="w-6 h-6" /> : <Zap className="w-6 h-6" />}
                     </button>
                 )}
             </div>
 
-            <div className="p-6 text-center bg-background border-t border-border">
-                <p className="text-sm font-bold text-primary mb-1 tracking-widest uppercase">Scanner Active</p>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                    Once a registration number is detected, <br />
-                    the student's attendance will be marked instantly.
-                </p>
+            <div className="mt-6 flex items-center justify-center gap-2">
+                <div className={`w-2 h-2 rounded-full ${isScanning ? 'bg-green-500 animate-pulse' : 'bg-slate-700'}`} />
+                <span className="text-[10px] font-bold text-slate-500 tracking-[0.3em] uppercase">
+                    {isScanning ? 'Lens Active' : 'Lens Inactive'}
+                </span>
             </div>
         </div>
     );
