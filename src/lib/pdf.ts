@@ -1,5 +1,5 @@
 import jsPDF from "jspdf";
-import "jspdf-autotable";
+import autoTable from "jspdf-autotable";
 import QRCode from "qrcode";
 
 interface AttendanceRecord {
@@ -18,83 +18,104 @@ interface StudentData {
 }
 
 export const generateEventReportPDF = (clubName: string, event: { title: string, date: string, venue: string }, attendance: any[]) => {
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
+    try {
+        console.log("PDF DEBUG: Starting generation", { clubName, event, count: attendance?.length });
+        const doc = new jsPDF();
+        const pageWidth = doc.internal.pageSize.getWidth();
 
-    // Header
-    doc.setFontSize(22);
-    doc.setTextColor(79, 70, 229); // Primary Color
-    doc.setFont("helvetica", "bold");
-    doc.text("Event Attendance Report", pageWidth / 2, 20, { align: "center" });
+        // 1. Header & Branding
+        console.log("PDF DEBUG: Drawing Header");
+        doc.setFontSize(22);
+        doc.setTextColor(79, 70, 229);
+        doc.setFont("helvetica", "bold");
+        doc.text("Event Attendance Report", pageWidth / 2, 20, { align: "center" });
 
-    // Club & Event Info Box
-    doc.setFillColor(248, 250, 252);
-    doc.setDrawColor(226, 232, 240);
-    doc.roundedRect(15, 30, pageWidth - 30, 40, 3, 3, 'FD');
+        // 2. Info Box
+        console.log("PDF DEBUG: Drawing Info Box");
+        doc.setFillColor(248, 250, 252);
+        doc.setDrawColor(226, 232, 240);
+        doc.roundedRect(15, 30, pageWidth - 30, 40, 3, 3, 'FD');
 
-    doc.setFontSize(10);
-    doc.setTextColor(100);
-    doc.text("ORGANIZED BY", 25, 40);
-    doc.setFontSize(14);
-    doc.setTextColor(0);
-    doc.setFont("helvetica", "bold");
-    doc.text(clubName.toUpperCase(), 25, 48);
+        doc.setFontSize(10);
+        doc.setTextColor(100);
+        doc.text("ORGANIZED BY", 25, 40);
+        doc.setFontSize(14);
+        doc.setTextColor(0);
+        doc.text((clubName || "Admin").toUpperCase(), 25, 48);
 
-    doc.setFontSize(10);
-    doc.setTextColor(100);
-    doc.text("EVENT TITLE", 25, 60);
-    doc.setFontSize(12);
-    doc.setTextColor(0);
-    doc.text(event.title, 25, 66);
+        doc.setFontSize(10);
+        doc.setTextColor(100);
+        doc.text("EVENT TITLE", 25, 60);
+        doc.setFontSize(12);
+        doc.setTextColor(0);
+        doc.text(event?.title || "N/A", 25, 66);
 
-    // Event Date & Venue (Right Side)
-    doc.setFontSize(10);
-    doc.setTextColor(100);
-    doc.text("DATE", pageWidth - 100, 40);
-    doc.setTextColor(0);
-    doc.setFontSize(11);
-    doc.text(event.date, pageWidth - 100, 48);
+        doc.text("DATE", pageWidth - 100, 40);
+        doc.text(event?.date || "N/A", pageWidth - 100, 48);
+        doc.text("VENUE", pageWidth - 100, 60);
+        doc.text(event?.venue || "N/A", pageWidth - 100, 66);
 
-    doc.setFontSize(10);
-    doc.setTextColor(100);
-    doc.text("VENUE", pageWidth - 100, 60);
-    doc.setTextColor(0);
-    doc.setFontSize(11);
-    doc.text(event.venue, pageWidth - 100, 66);
+        // 3. Summary
+        doc.setFontSize(10);
+        doc.setTextColor(100);
+        doc.text(`Total Attendees: ${attendance?.length || 0}`, 15, 85);
+        doc.text(`Report Generated: ${new Date().toLocaleString()}`, pageWidth - 15, 85, { align: "right" });
 
-    // Summary
-    doc.setFontSize(10);
-    doc.setTextColor(100);
-    doc.text(`Total Attendees: ${attendance.length}`, 15, 85);
-    doc.text(`Report Generated: ${new Date().toLocaleString()}`, pageWidth - 15, 85, { align: "right" });
+        // 4. Data Preparation
+        console.log("PDF DEBUG: Preparing Table Data");
+        const tableColumn = ["S.No", "Register Number", "Scan Date", "Scan Time", "Status"];
+        const tableRows = (attendance || []).map((record, index) => {
+            let timeStr = "N/A";
+            let dateStr = "N/A";
+            try {
+                if (record && record.timestamp) {
+                    let dateObj: Date;
+                    const ts = record.timestamp;
+                    if (ts && typeof ts.toDate === 'function') dateObj = ts.toDate();
+                    else if (ts && typeof ts.seconds === 'number') dateObj = new Date(ts.seconds * 1000);
+                    else dateObj = new Date(ts);
 
-    // Table
-    const tableColumn = ["S.No", "Register Number", "Student Email", "Time Scanned", "Status"];
-    const tableRows = attendance.map((record, index) => [
-        index + 1,
-        record.regNo,
-        record.studentEmail,
-        record.timestamp?.toDate ? record.timestamp.toDate().toLocaleTimeString() : "N/A",
-        record.status
-    ]);
+                    if (dateObj instanceof Date && !isNaN(dateObj.getTime())) {
+                        timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                        dateStr = dateObj.toLocaleDateString([], { day: '2-digit', month: '2-digit', year: 'numeric' });
+                    }
+                }
+            } catch (e) { console.warn("Row error", index, e); }
 
-    (doc as any).autoTable({
-        head: [tableColumn],
-        body: tableRows,
-        startY: 90,
-        margin: { horizontal: 15 },
-        styles: { fontSize: 9, cellPadding: 3 },
-        headStyles: { fillColor: [79, 70, 229], fontStyle: 'bold' },
-        alternateRowStyles: { fillColor: [249, 250, 251] },
-    });
+            return [index + 1, record?.regNo || "N/A", dateStr, timeStr, record?.status || "Confirmed"];
+        });
 
-    // Footer
-    const finalY = (doc as any).lastAutoTable.finalY || 90;
-    doc.setFontSize(9);
-    doc.setTextColor(150);
-    doc.text("This is an official attendance report generated from the RIT OD Hub.", pageWidth / 2, finalY + 20, { align: "center" });
+        // 5. Table Generation
+        console.log("PDF DEBUG: Attempting autoTable");
+        try {
+            autoTable(doc, {
+                head: [tableColumn],
+                body: tableRows,
+                startY: 90,
+                styles: { fontSize: 9 },
+                headStyles: { fillColor: [79, 70, 229] },
+            });
+        } catch (tableErr) {
+            console.error("PDF DEBUG: tableErr", tableErr);
+            throw tableErr;
+        }
 
-    doc.save(`Report_${event.title.replace(/\s+/g, '_')}.pdf`);
+        // 6. Footer
+        console.log("PDF DEBUG: Adding Footer");
+        const finalY = (doc as any).lastAutoTable?.finalY || 95;
+        doc.setFontSize(9);
+        doc.setTextColor(150);
+        doc.text("This is an official attendance report generated from the RIT OD Hub.", pageWidth / 2, finalY + 15, { align: "center" });
+
+        // 7. Save
+        console.log("PDF DEBUG: Saving File");
+        const safeTitle = (event?.title || "Event").toString().replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        doc.save(`Attendance_${safeTitle}.pdf`);
+        console.log("PDF DEBUG: Success");
+    } catch (error) {
+        console.error("CRITICAL PDF ERROR:", error);
+        alert(`Report error: ${error instanceof Error ? error.message : "Internal Error"}`);
+    }
 };
 
 export const generateODCertificate = async (student: StudentData, record: AttendanceRecord, certificateId: string) => {

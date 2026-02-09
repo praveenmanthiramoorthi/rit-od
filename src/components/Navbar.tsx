@@ -34,7 +34,6 @@ export function Navbar() {
                                         Admin Console
                                     </Link>
                                 )}
-                                <Link to="/dashboard" className="text-sm font-medium hover:text-primary transition-colors">Dashboard</Link>
                                 <button
                                     onClick={() => logout()}
                                     className="flex items-center space-x-2 bg-secondary text-secondary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:bg-secondary/80 transition-all hover:scale-105"
@@ -74,16 +73,13 @@ export function Navbar() {
                     )}
                     <Link to="/verify" className="block text-sm font-medium" onClick={() => setIsMenuOpen(false)}>Verify OD</Link>
                     {user ? (
-                        <>
-                            <Link to="/dashboard" className="block text-sm font-medium" onClick={() => setIsMenuOpen(false)}>Dashboard</Link>
-                            <button
-                                onClick={() => { logout(); setIsMenuOpen(false); }}
-                                className="w-full flex items-center space-x-2 bg-secondary text-secondary-foreground px-4 py-2 rounded-lg text-sm font-medium"
-                            >
-                                <LogOut className="w-4 h-4" />
-                                <span>Logout</span>
-                            </button>
-                        </>
+                        <button
+                            onClick={() => { logout(); setIsMenuOpen(false); }}
+                            className="w-full flex items-center space-x-2 bg-secondary text-secondary-foreground px-4 py-2 rounded-lg text-sm font-medium"
+                        >
+                            <LogOut className="w-4 h-4" />
+                            <span>Logout</span>
+                        </button>
                     ) : (
                         <button
                             onClick={() => { login(); setIsMenuOpen(false); }}

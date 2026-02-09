@@ -6,6 +6,27 @@ interface QRScannerProps {
     onScanSuccess: (decodedText: string) => void;
 }
 
+const playBeep = () => {
+    try {
+        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // A5 note
+        gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+
+        oscillator.start();
+        gainNode.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + 0.1);
+        oscillator.stop(audioCtx.currentTime + 0.1);
+    } catch (e) {
+        console.warn("Audio feedback failed:", e);
+    }
+};
+
 export const QRScanner = ({ onScanSuccess }: QRScannerProps) => {
     const [error, setError] = useState<string | null>(null);
     const [isScanning, setIsScanning] = useState(false);
@@ -55,7 +76,10 @@ export const QRScanner = ({ onScanSuccess }: QRScannerProps) => {
                         // @ts-ignore
                         scanner._lastScan = now;
 
+                        // Success Feedback
+                        playBeep();
                         if ('vibrate' in navigator) navigator.vibrate(100);
+
                         onScanSuccessRef.current(decodedText);
                     },
                     () => { /* scan error - ignore */ }
@@ -150,8 +174,8 @@ export const QRScanner = ({ onScanSuccess }: QRScannerProps) => {
                     <button
                         onClick={toggleTorch}
                         className={`absolute top-6 right-6 z-30 p-4 rounded-2xl transition-all duration-300 ${isTorchOn
-                                ? 'bg-yellow-400 text-black shadow-lg shadow-yellow-400/30 rotate-12'
-                                : 'bg-black/40 text-white backdrop-blur-md hover:bg-black/60'
+                            ? 'bg-yellow-400 text-black shadow-lg shadow-yellow-400/30 rotate-12'
+                            : 'bg-black/40 text-white backdrop-blur-md hover:bg-black/60'
                             }`}
                     >
                         {isTorchOn ? <ZapOff className="w-6 h-6" /> : <Zap className="w-6 h-6" />}

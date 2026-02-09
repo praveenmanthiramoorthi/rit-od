@@ -24,8 +24,7 @@ function App() {
         <Routes>
           <Route path="/" element={
             isAdmin ? <Navigate to="/admin" /> :
-              user && !profileComplete ? <Navigate to="/complete-profile" /> :
-                <LandingPage />
+              <LandingPage />
           } />
           <Route
             path="/admin"
@@ -35,7 +34,6 @@ function App() {
             path="/complete-profile"
             element={user && !profileComplete ? <CompleteProfile /> : <Navigate to="/" />}
           />
-          <Route path="/dashboard" element={<div className="pt-32 px-4 text-center">Dashboard Coming Soon</div>} />
           <Route path="/verify" element={<VerifyOD />} />
         </Routes>
       </main>

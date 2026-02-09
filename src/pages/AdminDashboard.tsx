@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { db } from "@/lib/firebase";
-import { collection, addDoc, query, where, Timestamp, onSnapshot, doc, setDoc, deleteDoc } from "firebase/firestore";
-import { Plus, Users, QrCode, ClipboardList, Download, X, Calendar, MapPin, CheckCircle2, Trash2 } from "lucide-react";
+import { collection, addDoc, query, where, Timestamp, onSnapshot, doc, setDoc, deleteDoc, getDocs } from "firebase/firestore";
+import { Plus, Users, QrCode, ClipboardList, Download, X, Calendar, MapPin, CheckCircle2, Trash2, Search, Filter, FileSpreadsheet } from "lucide-react";
 import { QRScanner } from "@/components/QRScanner";
 import { generateEventReportPDF } from "@/lib/pdf";
+import * as XLSX from 'xlsx';
 
 interface Event {
     id: string;
@@ -20,6 +21,8 @@ interface Attendance {
     regNo: string;
     timestamp: any;
     status: string;
+    studentName?: string;
+    department?: string;
 }
 
 export default function AdminDashboard() {
@@ -30,6 +33,8 @@ export default function AdminDashboard() {
     const [showScanner, setShowScanner] = useState(false);
     const [attendanceList, setAttendanceList] = useState<Attendance[]>([]);
     const [scanStatus, setScanStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
+    const [searchTerm, setSearchTerm] = useState("");
+    const [deptFilter, setDeptFilter] = useState("All");
 
     // Form State
     const [newTitle, setNewTitle] = useState("");
@@ -92,11 +97,38 @@ export default function AdminDashboard() {
         const cleanRegNo = regNo.trim().toUpperCase();
 
         try {
+            // Check if already marked
+            if (attendanceList.some(a => a.regNo === cleanRegNo)) {
+                setScanStatus({ type: 'error', message: `Already Marked: ${cleanRegNo}` });
+                setTimeout(() => setScanStatus(null), 3000);
+                return;
+            }
+
+            // Fetch student actual email and info if they have a profile
+            let studentEmail = `${cleanRegNo.toLowerCase()}@ritchennai.edu.in`;
+            let studentName = "N/A";
+            let department = "N/A";
+
+            try {
+                const userQuery = query(collection(db, "users"), where("regNo", "==", cleanRegNo));
+                const querySnapshot = await getDocs(userQuery);
+                if (!querySnapshot.empty) {
+                    const profile = querySnapshot.docs[0].data();
+                    studentEmail = profile.email;
+                    studentName = profile.name || "N/A";
+                    department = profile.department || "N/A";
+                }
+            } catch (err) {
+                console.warn("Could not fetch student profile info:", err);
+            }
+
             // 1. Mark in Event Subcollection (for Admin view)
             const eventAttendanceRef = doc(db, `events/${selectedEvent.id}/attendance`, cleanRegNo);
             const attendanceData = {
                 regNo: cleanRegNo,
-                studentEmail: `${cleanRegNo.toLowerCase()}@ritchennai.edu.in`,
+                studentEmail: studentEmail,
+                studentName: studentName,
+                department: department,
                 timestamp: Timestamp.now(),
                 status: "Confirmed",
                 eventTitle: selectedEvent.title,
@@ -126,8 +158,47 @@ export default function AdminDashboard() {
 
     const handleDownloadReport = () => {
         if (!selectedEvent) return;
-        generateEventReportPDF(clubName, selectedEvent, attendanceList);
+        if (attendanceList.length === 0) {
+            alert("No attendance records found for this event yet.");
+            return;
+        }
+        // Sort chronologically (oldest first) for the report
+        const sortedAttendance = [...attendanceList].sort((a, b) =>
+            (a.timestamp?.seconds || 0) - (b.timestamp?.seconds || 0)
+        );
+        generateEventReportPDF(clubName, selectedEvent, sortedAttendance);
     };
+
+    const handleExportExcel = () => {
+        if (!selectedEvent || attendanceList.length === 0) return;
+
+        const data = attendanceList.map((att, index) => ({
+            "S.No": index + 1,
+            "Register Number": att.regNo,
+            "Student Name": att.studentName || "N/A",
+            "Department": att.department || "N/A",
+            "Email": att.studentEmail,
+            "Scan Date": att.timestamp?.toDate().toLocaleDateString(),
+            "Scan Time": att.timestamp?.toDate().toLocaleTimeString(),
+            "Status": att.status
+        }));
+
+        const ws = XLSX.utils.json_to_sheet(data);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Attendance");
+
+        const fileName = `Attendance_${selectedEvent.title.replace(/\s+/g, '_')}.xlsx`;
+        XLSX.writeFile(wb, fileName);
+    };
+
+    const filteredAttendance = attendanceList.filter(att => {
+        const matchesSearch = att.regNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            (att.studentName?.toLowerCase().includes(searchTerm.toLowerCase()));
+        const matchesDept = deptFilter === "All" || att.department === deptFilter;
+        return matchesSearch && matchesDept;
+    });
+
+    const departments = ["All", "CSE(AIML)", "CSE", "CCE", "ECE", "EE(VLSI)", "AI&DS", "CSBS"];
 
     const handleDeleteEvent = async (eventId: string) => {
         if (!confirm("Are you sure you want to delete this event? This action cannot be undone.")) return;
@@ -236,32 +307,70 @@ export default function AdminDashboard() {
                                             className="flex items-center gap-2 px-4 py-2 bg-secondary text-secondary-foreground rounded-lg font-medium hover:bg-secondary/80 transition-colors"
                                         >
                                             <Download className="w-4 h-4" />
-                                            Report
+                                            PDF Report
+                                        </button>
+                                        <button
+                                            onClick={handleExportExcel}
+                                            className="flex items-center gap-2 px-4 py-2 bg-green-500/10 text-green-600 rounded-lg font-medium hover:bg-green-500/20 transition-colors"
+                                        >
+                                            <FileSpreadsheet className="w-4 h-4" />
+                                            Excel
                                         </button>
                                     </div>
                                 </div>
 
-                                <div className="space-y-4">
-                                    <h3 className="font-bold flex items-center gap-2">
-                                        <Users className="w-5 h-5 text-primary" />
-                                        Recent Attendance
-                                    </h3>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        {attendanceList.length === 0 ? (
-                                            <p className="text-muted-foreground col-span-full py-8 text-center bg-secondary/5 rounded-2xl border border-dashed border-border">
-                                                No attendance marked yet. Start scanning!
-                                            </p>
-                                        ) : (
-                                            attendanceList.map((att, i) => (
-                                                <div key={i} className="flex items-center justify-between p-4 bg-secondary/5 rounded-xl border border-border">
-                                                    <div>
-                                                        <p className="font-bold text-sm">{att.regNo}</p>
-                                                        <p className="text-xs text-muted-foreground">{att.timestamp?.toDate().toLocaleTimeString()}</p>
+                                <div className="space-y-6">
+                                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-secondary/5 p-4 rounded-2xl border border-border">
+                                        <div className="flex items-center gap-2 flex-1 max-w-sm">
+                                            <Search className="w-4 h-4 text-muted-foreground" />
+                                            <input
+                                                type="text"
+                                                placeholder="Search Register No or Name..."
+                                                value={searchTerm}
+                                                onChange={(e) => setSearchTerm(e.target.value)}
+                                                className="w-full bg-transparent border-none focus:outline-none text-sm placeholder:text-muted-foreground"
+                                            />
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <Filter className="w-4 h-4 text-muted-foreground" />
+                                            <select
+                                                value={deptFilter}
+                                                onChange={(e) => setDeptFilter(e.target.value)}
+                                                className="bg-transparent border-none focus:outline-none text-sm font-medium cursor-pointer"
+                                            >
+                                                {departments.map(dept => (
+                                                    <option key={dept} value={dept} className="bg-background text-foreground">{dept}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-4">
+                                        <h3 className="font-bold flex items-center gap-2">
+                                            <Users className="w-5 h-5 text-primary" />
+                                            Attendee List {searchTerm || deptFilter !== "All" ? `(Found: ${filteredAttendance.length})` : ""}
+                                        </h3>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            {filteredAttendance.length === 0 ? (
+                                                <p className="text-muted-foreground col-span-full py-8 text-center bg-secondary/5 rounded-2xl border border-dashed border-border">
+                                                    {attendanceList.length === 0 ? "No attendance marked yet. Start scanning!" : "No matches found for your search/filter."}
+                                                </p>
+                                            ) : (
+                                                filteredAttendance.map((att, i) => (
+                                                    <div key={i} className="flex items-center justify-between p-4 bg-background rounded-xl border border-border hover:shadow-md transition-shadow">
+                                                        <div className="flex flex-col gap-0.5">
+                                                            <div className="flex items-center gap-2">
+                                                                <p className="font-bold text-sm">{att.regNo}</p>
+                                                                <span className="text-[10px] px-2 py-0.5 bg-primary/10 text-primary rounded-full font-bold uppercase">{att.department || "N/A"}</span>
+                                                            </div>
+                                                            <p className="text-sm font-medium text-muted-foreground line-clamp-1">{att.studentName || "Default Profile"}</p>
+                                                            <p className="text-[10px] text-muted-foreground/60">{att.timestamp?.toDate().toLocaleTimeString()}</p>
+                                                        </div>
+                                                        <CheckCircle2 className="w-5 h-5 text-green-500 shrink-0" />
                                                     </div>
-                                                    <CheckCircle2 className="w-5 h-5 text-green-500" />
-                                                </div>
-                                            ))
-                                        )}
+                                                ))
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
